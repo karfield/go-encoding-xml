@@ -134,9 +134,12 @@ func (d *Decoder) DecodeElement(v interface{}, start *StartElement) error {
 }
 
 // An UnmarshalError represents an error in the unmarshalling process.
-type UnmarshalError string
+type UnmarshalError struct {
+	Msg  string
+	Line int
+}
 
-func (e UnmarshalError) Error() string { return string(e) }
+func (e *UnmarshalError) Error() string { return e.Msg }
 
 // Unmarshaler is the interface implemented by objects that can unmarshal
 // an XML element description of themselves.
@@ -189,7 +192,7 @@ func (p *Decoder) unmarshalInterface(val Unmarshaler, start *StartElement) error
 	p.unmarshalDepth--
 	if err != nil {
 		p.popEOF()
-		return err
+		return &UnmarshalError{err.Error(), p.line}
 	}
 
 	if !p.popEOF() {
@@ -236,12 +239,16 @@ func (p *Decoder) unmarshalAttr(val reflect.Value, attr Attr) error {
 	if val.CanInterface() && val.Type().Implements(unmarshalerAttrType) {
 		// This is an unmarshaler with a non-pointer receiver,
 		// so it's likely to be incorrect, but we do what we're told.
-		return val.Interface().(UnmarshalerAttr).UnmarshalXMLAttr(attr)
+		if err := val.Interface().(UnmarshalerAttr).UnmarshalXMLAttr(attr); err != nil {
+			return &UnmarshalError{err.Error(), p.line}
+		}
 	}
 	if val.CanAddr() {
 		pv := val.Addr()
 		if pv.CanInterface() && pv.Type().Implements(unmarshalerAttrType) {
-			return pv.Interface().(UnmarshalerAttr).UnmarshalXMLAttr(attr)
+			if err := pv.Interface().(UnmarshalerAttr).UnmarshalXMLAttr(attr); err != nil {
+				return &UnmarshalError{err.Error(), p.line}
+			}
 		}
 	}
 
@@ -397,7 +404,7 @@ func (p *Decoder) unmarshal(val reflect.Value, start *StartElement) error {
 		if tinfo.xmlname != nil {
 			finfo := tinfo.xmlname
 			if finfo.name != "" && finfo.name != start.Name.Local {
-				return UnmarshalError("expected element type <" + finfo.name + "> but have <" + start.Name.Local + ">")
+				return &UnmarshalError{"expected element type <" + finfo.name + "> but have <" + start.Name.Local + ">", p.line}
 			}
 			if finfo.xmlns != "" && finfo.xmlns != start.Name.Space {
 				e := "expected element <" + finfo.name + "> in name space " + finfo.xmlns + " but have "
@@ -406,7 +413,7 @@ func (p *Decoder) unmarshal(val reflect.Value, start *StartElement) error {
 				} else {
 					e += start.Name.Space
 				}
-				return UnmarshalError(e)
+				return &UnmarshalError{e, p.line}
 			}
 			fv := finfo.value(sv)
 			if _, ok := fv.Interface().(Name); ok {
