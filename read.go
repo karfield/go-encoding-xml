@@ -269,10 +269,15 @@ func (p *Decoder) unmarshalAttr(val reflect.Value, attr Attr) error {
 	return nil
 }
 
+type UnmarshalFinalizer interface {
+	UnmarshalFinalize() error
+}
+
 var (
 	unmarshalerType     = reflect.TypeOf((*Unmarshaler)(nil)).Elem()
 	unmarshalerAttrType = reflect.TypeOf((*UnmarshalerAttr)(nil)).Elem()
 	textUnmarshalerType = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
+	unmarshalFinalizer  = reflect.TypeOf((*UnmarshalFinalizer)(nil)).Elem()
 )
 
 // Unmarshal a single XML element into val.
@@ -467,6 +472,8 @@ func (p *Decoder) unmarshal(val reflect.Value, start *StartElement) error {
 		}
 	}
 
+	startLine := p.line
+
 	// Find end element.
 	// Process sub-elements along the way.
 Loop:
@@ -554,6 +561,21 @@ Loop:
 		t.SetString(string(saveXMLData))
 	case reflect.Slice:
 		t.Set(reflect.ValueOf(saveXMLData))
+	}
+
+	if val.CanInterface() && val.Type().Implements(unmarshalFinalizer) {
+		if err := val.Interface().(UnmarshalFinalizer).UnmarshalFinalize(); err != nil {
+			return &UnmarshalError{"unmarshal finalize error: " + err.Error(), startLine}
+		}
+	}
+
+	if val.CanAddr() {
+		pv := val.Addr()
+		if pv.CanInterface() && pv.Type().Implements(unmarshalFinalizer) {
+			if err := pv.Interface().(UnmarshalFinalizer).UnmarshalFinalize(); err != nil {
+				return &UnmarshalError{"unmarshal finalize error: " + err.Error(), startLine}
+			}
+		}
 	}
 
 	return nil
