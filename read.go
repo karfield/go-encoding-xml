@@ -139,7 +139,9 @@ type UnmarshalError struct {
 	Line int
 }
 
-func (e *UnmarshalError) Error() string { return e.Msg }
+func (e *UnmarshalError) Error() string {
+	return fmt.Sprintf("%s from line: %d.", e.Msg, e.Line)
+}
 
 // Unmarshaler is the interface implemented by objects that can unmarshal
 // an XML element description of themselves.
