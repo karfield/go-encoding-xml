@@ -408,7 +408,7 @@ func (p *Decoder) unmarshal(val reflect.Value, start *StartElement) error {
 		// Validate and assign element name.
 		if tinfo.xmlname != nil {
 			finfo := tinfo.xmlname
-			if finfo.name != "" && finfo.name != start.Name.Local {
+			if finfo.name != "" && !finfo.lookupName(start.Name.Local) {
 				return &UnmarshalError{"expected element type <" + finfo.name + "> but have <" + start.Name.Local + ">", p.line}
 			}
 			if finfo.xmlns != "" && finfo.xmlns != start.Name.Space {
@@ -435,7 +435,7 @@ func (p *Decoder) unmarshal(val reflect.Value, start *StartElement) error {
 				strv := finfo.value(sv)
 				// Look for attribute.
 				for _, a := range start.Attr {
-					if a.Name.Local == finfo.name && (finfo.xmlns == "" || finfo.xmlns == a.Name.Space) {
+					if finfo.lookupName(a.Name.Local) && (finfo.xmlns == "" || finfo.xmlns == a.Name.Space) {
 						if err := p.unmarshalAttr(strv, a); err != nil {
 							return err
 						}
@@ -651,7 +651,7 @@ Loop:
 				continue Loop
 			}
 		}
-		if len(finfo.parents) == len(parents) && finfo.name == start.Name.Local {
+		if len(finfo.parents) == len(parents) && finfo.lookupName(start.Name.Local) {
 			// It's a perfect match, unmarshal the field.
 			return true, p.unmarshal(finfo.value(sv), start)
 		}

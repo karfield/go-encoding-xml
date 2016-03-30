@@ -21,6 +21,7 @@ type typeInfo struct {
 type fieldInfo struct {
 	idx     []int
 	name    string
+	aliases []string
 	xmlns   string
 	flags   fieldFlags
 	parents []string
@@ -46,6 +47,34 @@ var tinfoMap = make(map[reflect.Type]*typeInfo)
 var tinfoLock sync.RWMutex
 
 var nameType = reflect.TypeOf(Name{})
+
+func (info *fieldInfo) lookupName(name string) bool {
+	if info.name == name {
+		return true
+	}
+	if info.aliases != nil {
+		for _, alias := range info.aliases {
+			if alias == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (info *fieldInfo) crossLookupName(another *fieldInfo) bool {
+	if info.lookupName(another.name) {
+		return true
+	}
+	if another.aliases != nil {
+		for _, a := range another.aliases {
+			if info.lookupName(a) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // getTypeInfo returns the typeInfo structure with details necessary
 // for marshalling and unmarshalling typ.
@@ -181,8 +210,11 @@ func structFieldInfo(typ reflect.Type, f *reflect.StructField) (*fieldInfo, erro
 		// The XMLName field records the XML element name. Don't
 		// process it as usual because its name should default to
 		// empty rather than to the field name.
-		finfo.name = tag
-		return finfo, nil
+		if err := parseNames(finfo, f, tag); err != nil {
+			return nil, err
+		} else {
+			return finfo, nil
+		}
 	}
 
 	if tag == "" {
@@ -205,7 +237,9 @@ func structFieldInfo(typ reflect.Type, f *reflect.StructField) (*fieldInfo, erro
 	if parents[len(parents)-1] == "" {
 		return nil, fmt.Errorf("xml: trailing '>' in field %s of type %s", f.Name, typ)
 	}
-	finfo.name = parents[len(parents)-1]
+	if err := parseNames(finfo, f, parents[len(parents)-1]); err != nil {
+		return nil, err
+	}
 	if len(parents) > 1 {
 		if (finfo.flags & fElement) == 0 {
 			return nil, fmt.Errorf("xml: %s chain not valid with %s flag", tag, strings.Join(tokens[1:], ","))
@@ -219,12 +253,35 @@ func structFieldInfo(typ reflect.Type, f *reflect.StructField) (*fieldInfo, erro
 	if finfo.flags&fElement != 0 {
 		ftyp := f.Type
 		xmlname := lookupXMLName(ftyp)
-		if xmlname != nil && xmlname.name != finfo.name {
+		if xmlname != nil && !finfo.lookupName(xmlname.name) {
 			return nil, fmt.Errorf("xml: name %q in tag of %s.%s conflicts with name %q in %s.XMLName",
 				finfo.name, typ, f.Name, xmlname.name, ftyp)
 		}
 	}
+
 	return finfo, nil
+}
+
+func parseNames(finfo *fieldInfo, f *reflect.StructField, tag string) error {
+	// enable to supports aliases
+	if strings.ContainsRune(tag, '|') {
+		names := []string{}
+		for _, n := range strings.Split(tag, "|") {
+			if n != "" {
+				names = append(names, n)
+			}
+		}
+		if len(names) == 0 {
+			return fmt.Errorf("xml: no available tag for %s", f.Name)
+		}
+		finfo.name = names[0]
+		if len(names) > 1 {
+			finfo.aliases = names[1:]
+		}
+	} else {
+		finfo.name = tag
+	}
+	return nil
 }
 
 // lookupXMLName returns the fieldInfo for typ's XMLName field
@@ -286,15 +343,15 @@ Loop:
 			}
 		}
 		if len(oldf.parents) > len(newf.parents) {
-			if oldf.parents[len(newf.parents)] == newf.name {
+			if newf.lookupName(oldf.parents[len(newf.parents)]) {
 				conflicts = append(conflicts, i)
 			}
 		} else if len(oldf.parents) < len(newf.parents) {
-			if newf.parents[len(oldf.parents)] == oldf.name {
+			if oldf.lookupName(newf.parents[len(oldf.parents)]) {
 				conflicts = append(conflicts, i)
 			}
 		} else {
-			if newf.name == oldf.name {
+			if newf.crossLookupName(oldf) {
 				conflicts = append(conflicts, i)
 			}
 		}
