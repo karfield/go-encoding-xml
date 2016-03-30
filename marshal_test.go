@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package xml
+package goxml
 
 import (
 	"bytes"
@@ -1115,7 +1115,7 @@ var marshalErrorTests = []struct {
 	},
 	{
 		Value: map[*Ship]bool{nil: false},
-		Err:   "xml: unsupported type: map[*xml.Ship]bool",
+		Err:   "xml: unsupported type: map[*goxml.Ship]bool",
 		Kind:  reflect.Map,
 	},
 	{
